@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  SALES_MANAGER
+  SALES_AGENT
+  EMPLOYEE
+}
+
+enum LeadStatus {
+  NEW
+  ACTIVE
+  CONTACTED
+  INTERESTED
+  FOLLOW_UP
+  QUOTATION_SENT
+  NEGOTIATION
+  WON
+  LOST
+  INACTIVE
+  CLOSED
+}
+
+enum LeadSource {
+  INDIAMART
+  WEBSITE
+  FACEBOOK
+  WHATSAPP
+  REFERRAL
+  MANUAL
+}
+
+enum FollowupStatus {
+  PENDING
+  COMPLETED
+  NO_RESPONSE
+  INTERESTED
+  CALLBACK
+  CLOSED
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum DealStage {
+  NEW
+  DISCUSSION
+  PROPOSAL_SENT
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+  BROWSER
+}
+
+model User {
+  id             String    @id @default(uuid())
+  name           String
+  email          String    @unique
+  phone          String?
+  password       String
+  role           UserRole
+  profileImage   String?
+  targetAmount   Decimal?  @db.Decimal(14, 2)
+  achievedAmount Decimal   @default(0) @db.Decimal(14, 2)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  leadsCreated     Lead[]            @relation("LeadCreatedBy")
+  leadsAssigned    Lead[]            @relation("LeadAssignedTo")
+  followupsCreated Followup[]        @relation("FollowupCreatedBy")
+  notes            Note[]
+  tasksAssigned    Task[]            @relation("TaskAssignedTo")
+  tasksCreated     Task[]            @relation("TaskCreatedBy")
+  dealsAssigned    Deal[]            @relation("DealAssignedTo")
+  activities       ActivityLog[]
+  timelineEvents   LeadTimelineEvent[]
+  refreshTokens    RefreshToken[]
+  passwordResets   PasswordResetToken[]
+  notifications    Notification[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model Lead {
+  id               String     @id @default(uuid())
+  name             String
+  phone            String?
+  alternatePhone   String?
+  email            String?
+  companyName      String?
+  serviceRequired  String?
+  budget           Decimal?   @db.Decimal(14, 2)
+  country          String?
+  state            String?
+  city             String?
+  address          String?    @db.Text
+  leadSource       LeadSource
+  leadStatus       LeadStatus @default(NEW)
+  assignedToId     String?
+  assignedTo       User?      @relation("LeadAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdById      String
+  createdBy        User       @relation("LeadCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  tags             String[]   @default([])
+  notes            String?    @db.Text
+  lastContactDate  DateTime?
+  nextFollowupDate DateTime?
+  isActive         Boolean    @default(true)
+  convertedAt      DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  followups   Followup[]
+  leadNotes   Note[]
+  customers   Customer[]
+  deals       Deal[]
+  quotations  Quotation[]
+  timeline    LeadTimelineEvent[]
+
+  @@index([leadStatus])
+  @@index([leadSource])
+  @@index([assignedToId])
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([nextFollowupDate])
+  @@index([phone])
+  @@index([email])
+  @@index([city])
+}
+
+model Followup {
+  id               String         @id @default(uuid())
+  leadId           String
+  lead             Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  followupDate     DateTime
+  remarks          String?        @db.Text
+  nextFollowupDate DateTime?
+  followupStatus   FollowupStatus @default(PENDING)
+  createdById      String
+  createdBy        User           @relation("FollowupCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt        DateTime       @default(now())
+
+  @@index([leadId])
+  @@index([followupDate])
+  @@index([nextFollowupDate])
+  @@index([followupStatus])
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model Customer {
+  id               String   @id @default(uuid())
+  leadId           String?
+  lead             Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  name             String
+  phone            String?
+  email            String?
+  companyName      String?
+  address          String?  @db.Text
+  purchasedService String?
+  totalDealAmount  Decimal  @default(0) @db.Decimal(14, 2)
+  notes            String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  deals      Deal[]
+  quotations Quotation[]
+
+  @@index([leadId])
+  @@index([email])
+  @@index([phone])
+}
+
+model Deal {
+  id                String    @id @default(uuid())
+  customerId        String?
+  customer          Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId            String?
+  lead              Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  title             String
+  amount            Decimal   @db.Decimal(14, 2)
+  stage             DealStage @default(NEW)
+  expectedCloseDate DateTime?
+  assignedToId      String?
+  assignedTo        User?     @relation("DealAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([stage])
+  @@index([assignedToId])
+}
+
+model Quotation {
+  id              String          @id @default(uuid())
+  customerId      String?
+  customer        Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId          String?
+  lead            Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  quotationNumber String          @unique
+  serviceName     String
+  amount          Decimal         @db.Decimal(14, 2)
+  tax             Decimal         @default(0) @db.Decimal(14, 2)
+  discount        Decimal         @default(0) @db.Decimal(14, 2)
+  totalAmount     Decimal         @db.Decimal(14, 2)
+  status          QuotationStatus @default(DRAFT)
+  pdfUrl          String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([leadId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model Task {
+  id           String       @id @default(uuid())
+  title        String
+  description  String?      @db.Text
+  assignedToId String?
+  assignedTo   User?        @relation("TaskAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  dueDate      DateTime?
+  priority     TaskPriority @default(MEDIUM)
+  status       TaskStatus   @default(PENDING)
+  createdById  String
+  createdBy    User         @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model LeadTimelineEvent {
+  id        String   @id @default(uuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  remarks   String?  @db.Text
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([leadId, createdAt])
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String?
+  entityId   String?
+  remarks    String?  @db.Text
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String               @id @default(uuid())
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel
+  title     String
+  body      String               @db.Text
+  readAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  @@index([userId, readAt])
+}
