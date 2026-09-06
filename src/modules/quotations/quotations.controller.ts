@@ -19,16 +19,26 @@ import * as svc from "./quotations.service";
  *         application/json:
  *           schema:
  *             type: object
- *             required: [serviceName, amount]
  *             properties:
  *               leadId:
  *                 type: string
  *               customerId:
  *                 type: string
- *               serviceName:
- *                 type: string
- *               amount:
- *                 type: number
+ *               lineItems:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     description:
+ *                       type: string
+ *                     quantity:
+ *                       type: integer
+ *                     unitPrice:
+ *                       type: number
+ *                     discount:
+ *                       type: number
+ *                     taxPercent:
+ *                       type: number
  *     responses:
  *       201:
  *         description: Quotation created successfully
@@ -57,18 +67,46 @@ export const list = asyncHandler(async (_req: Request, res: Response) => {
 
 /**
  * @swagger
+ * /quotations/{id}:
+ *   get:
+ *     summary: Get a quotation by ID
+ *     tags: [Quotations]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Quotation details
+ */
+export const get = asyncHandler(async (req: Request, res: Response) => {
+  const q = await svc.getQuotation(req.params.id);
+  return ok(res, q);
+});
+
+/**
+ * @swagger
+ * /quotations/{id}:
+ *   patch:
+ *     summary: Update a quotation
+ *     tags: [Quotations]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Quotation updated successfully
+ */
+export const update = asyncHandler(async (req: Request, res: Response) => {
+  const q = await svc.updateQuotation(req.params.id, req.body, req.user!.id);
+  return ok(res, q);
+});
+
+/**
+ * @swagger
  * /quotations/{id}/pdf:
  *   post:
  *     summary: Generate quotation PDF
  *     tags: [Quotations]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
  *     responses:
  *       200:
  *         description: PDF generated successfully

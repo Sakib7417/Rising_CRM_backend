@@ -1,10 +1,8 @@
-import { DealStage, FollowupStatus } from "@prisma/client";
+import { DealStage, FollowupStatus, LeadStatus } from "@prisma/client";
 import { prisma } from "../../config/db";
 
 export async function getDashboardStats(userId?: string, role?: string) {
   const leadWhere =
-    role === "SALES_AGENT" || role === "EMPLOYEE" ? { assignedToId: userId } : undefined;
-  const dealWhere =
     role === "SALES_AGENT" || role === "EMPLOYEE" ? { assignedToId: userId } : undefined;
 
   const todayStart = new Date();
@@ -12,81 +10,81 @@ export async function getDashboardStats(userId?: string, role?: string) {
   const todayEnd = new Date();
   todayEnd.setHours(23, 59, 59, 999);
 
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(todayStart.getDate() - todayStart.getDay());
+
   const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+
+  const now = new Date();
+  const upcomingEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const [
     totalLeads,
-    activeLeads,
-    inactiveLeads,
-    convertedLeads,
-    wonDeals,
-    lostDeals,
-    pendingFollowups,
-    todaysFollowups,
-    monthlyRevenue,
+    todaysLeads,
+    thisWeekLeads,
+    thisMonthLeads,
+    followupsToday,
+    upcomingFollowups,
+    missedFollowups,
+    wonLeads,
+    lostLeads,
+    newLeads,
+    recentLeads,
     recentActivities,
   ] = await Promise.all([
     prisma.lead.count({ where: leadWhere }),
-    prisma.lead.count({ where: { ...leadWhere, isActive: true } }),
-    prisma.lead.count({ where: { ...leadWhere, isActive: false } }),
-    prisma.lead.count({ where: { ...leadWhere, convertedAt: { not: null } } }),
-    prisma.deal.count({ where: { ...dealWhere, stage: DealStage.WON } }),
-    prisma.deal.count({ where: { ...dealWhere, stage: DealStage.LOST } }),
+    prisma.lead.count({ where: { ...leadWhere, createdAt: { gte: todayStart, lte: todayEnd } } }),
+    prisma.lead.count({ where: { ...leadWhere, createdAt: { gte: weekStart, lte: todayEnd } } }),
+    prisma.lead.count({ where: { ...leadWhere, createdAt: { gte: monthStart, lte: todayEnd } } }),
     prisma.followup.count({
       where: {
         followupStatus: FollowupStatus.PENDING,
-        lead: leadWhere ? { assignedToId: userId } : undefined,
-      },
-    }),
-    prisma.followup.count({
-      where: {
         followupDate: { gte: todayStart, lte: todayEnd },
         lead: leadWhere ? { assignedToId: userId } : undefined,
       },
     }),
-    prisma.deal.aggregate({
+    prisma.followup.count({
       where: {
-        ...dealWhere,
-        stage: DealStage.WON,
-        updatedAt: { gte: monthStart },
+        followupStatus: FollowupStatus.PENDING,
+        followupDate: { gte: now, lte: upcomingEnd },
+        lead: leadWhere ? { assignedToId: userId } : undefined,
       },
-      _sum: { amount: true },
+    }),
+    prisma.followup.count({
+      where: {
+        followupStatus: FollowupStatus.PENDING,
+        followupDate: { lt: now },
+        lead: leadWhere ? { assignedToId: userId } : undefined,
+      },
+    }),
+    prisma.lead.count({ where: { ...leadWhere, leadStatus: LeadStatus.WON } }),
+    prisma.lead.count({ where: { ...leadWhere, leadStatus: LeadStatus.LOST } }),
+    prisma.lead.count({ where: { ...leadWhere, leadStatus: LeadStatus.NEW } }),
+    prisma.lead.findMany({
+      where: leadWhere,
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      include: { createdBy: { select: { id: true, name: true } } },
     }),
     prisma.activityLog.findMany({
       orderBy: { createdAt: "desc" },
-      take: 15,
+      take: 12,
       include: { user: { select: { id: true, name: true, email: true } } },
     }),
   ]);
 
-  const totalForRate = totalLeads || 1;
-  const conversionRate = Math.round((convertedLeads / totalForRate) * 10000) / 100;
-
-  const employeePerformance = await prisma.user.findMany({
-    where: { isActive: true, role: { in: ["SALES_AGENT", "SALES_MANAGER", "EMPLOYEE"] } },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      targetAmount: true,
-      achievedAmount: true,
-      _count: { select: { leadsAssigned: true, dealsAssigned: true } },
-    },
-    take: 20,
-  });
-
   return {
     totalLeads,
-    activeLeads,
-    inactiveLeads,
-    convertedLeads,
-    wonDeals,
-    lostDeals,
-    pendingFollowups,
-    todaysFollowups,
-    monthlyRevenue: monthlyRevenue._sum.amount?.toString() ?? "0",
-    conversionRate,
-    employeePerformance,
+    todaysLeads,
+    thisWeekLeads,
+    thisMonthLeads,
+    followupsToday,
+    upcomingFollowups,
+    missedFollowups,
+    wonLeads,
+    lostLeads,
+    newLeads,
+    recentLeads,
     recentActivities,
   };
 }

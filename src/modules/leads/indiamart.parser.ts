@@ -20,48 +20,71 @@ function cleanLines(text: string): string[] {
     .filter(Boolean);
 }
 
+function splitIndiaMartFields(line: string): string[] {
+  if (line.includes("\t")) {
+    return line
+      .split(/\t+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  const parts = line
+    .split(/\s{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts.length > 1 ? parts : [line.trim()];
+}
+
 export function parseIndiaMartLeadText(raw: string): ParsedIndiaMartLead {
   const lines = cleanLines(raw);
   const out: ParsedIndiaMartLead = {};
+  const fields: string[] = [];
 
-  for (const line of lines) {
-    if (DATE_LINE.test(line)) {
+  if (lines.length === 1) {
+    fields.push(...splitIndiaMartFields(lines[0]));
+  } else {
+    fields.push(...lines);
+  }
+
+  const remaining: string[] = [];
+
+  for (const field of fields) {
+    if (DATE_LINE.test(field)) {
       continue;
     }
-    const digits = line.replace(/\D/g, "");
+
+    const emailMatch = field.match(EMAIL_LINE);
+    if (!out.email && emailMatch) {
+      out.email = emailMatch[0];
+      continue;
+    }
+
+    const digits = field.replace(/\D/g, "");
     if (!out.phone && digits.length >= 10) {
       out.phone = digits.slice(-10);
       continue;
     }
-    if (!out.email && EMAIL_LINE.test(line)) {
-      out.email = line.match(EMAIL_LINE)?.[0];
-      continue;
-    }
-    const loc = LOCATION_LINE.exec(line);
+
+    const loc = LOCATION_LINE.exec(field);
     if (loc) {
       out.city = loc[1].trim();
       out.state = loc[2].trim();
       out.country = loc[3].trim();
+      continue;
     }
+
+    remaining.push(field);
   }
 
-  const rest = lines.filter((line) => {
-    if (DATE_LINE.test(line)) return false;
-    const digits = line.replace(/\D/g, "");
-    if (digits.length >= 10 && out.phone && digits.endsWith(out.phone)) return false;
-    if (EMAIL_LINE.test(line)) return false;
-    if (LOCATION_LINE.test(line)) return false;
-    return true;
-  });
-
-  if (rest[0]) {
-    out.name = rest[0];
+  if (remaining.length > 0) {
+    out.name = remaining[0];
   }
-  if (rest[1]) {
-    out.serviceRequired = rest[1];
+  if (remaining.length > 1) {
+    out.serviceRequired = remaining[1];
   }
-  if (rest[2]) {
-    out.companyName = rest[2];
+  if (remaining.length > 2) {
+    out.companyName = remaining[2];
   }
 
   return out;

@@ -11,6 +11,7 @@ router.post("/", validateBody(createFollowupSchema), ctrl.create);
 router.patch("/:id", validateBody(updateFollowupSchema), ctrl.update);
 router.delete("/:id", ctrl.remove);
 router.get("/lead/:leadId", ctrl.history);
+router.get("/", validateQuery(followupQuerySchema.partial()), ctrl.list);
 router.get("/daily", validateQuery(followupQuerySchema.partial()), ctrl.daily);
 router.get("/missed", ctrl.missed);
 router.get("/upcoming", validateQuery(followupQuerySchema.partial()), ctrl.upcoming);

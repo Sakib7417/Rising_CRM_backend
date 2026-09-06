@@ -96,3 +96,12 @@ export const upcoming = asyncHandler(async (req: Request, res: Response) => {
   const list = await svc.upcomingFollowups(within, userId);
   return ok(res, list);
 });
+
+export const list = asyncHandler(async (req: Request, res: Response) => {
+  const userId =
+    req.user!.role === "SUPER_ADMIN" || req.user!.role === "ADMIN" || req.user!.role === "SALES_MANAGER"
+      ? (req.query.userId as string | undefined)
+      : req.user!.id;
+  const list = await svc.listAllFollowups(userId);
+  return ok(res, list);
+});

@@ -14,7 +14,14 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   }
 
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({ success: false, error: err.message });
+    const response: Record<string, unknown> = {
+      success: false,
+      error: err.message,
+    };
+    if (err.details) {
+      response.details = err.details;
+    }
+    res.status(err.statusCode).json(response);
     return;
   }
 

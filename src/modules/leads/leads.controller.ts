@@ -1,7 +1,9 @@
 import type { Request, Response } from "express";
 import { parse } from "csv-parse/sync";
+import ExcelJS from "exceljs";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { created, ok, paginated } from "../../utils/http";
+import { AppError } from "../../utils/AppError";
 import * as leadSvc from "./leads.service";
 import { listLeadTimeline } from "../../services/timeline.service";
 
@@ -241,13 +243,43 @@ export const timeline = asyncHandler(async (req: Request, res: Response) => {
 export const bulkCsv = asyncHandler(async (req: Request, res: Response) => {
   const file = req.file;
   if (!file) {
-    return res.status(400).json({ success: false, error: "CSV file required" });
+    return res.status(400).json({ success: false, error: "CSV or Excel file required" });
   }
-  const records = parse(file.buffer.toString("utf8"), {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-  }) as Record<string, string>[];
-  const result = await leadSvc.bulkCreateLeadsFromRows(records, req.user!.id);
+
+  const extension = file.originalname.split(".").pop()?.toLowerCase();
+  let records: Record<string, string>[] = [];
+
+  if (extension === "csv") {
+    records = parse(file.buffer.toString("utf8"), {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+    }) as Record<string, string>[];
+  } else if (extension === "xlsx" || extension === "xls") {
+    const workbook = new ExcelJS.Workbook();
+    const buffer = Buffer.isBuffer(file.buffer) ? file.buffer : (Buffer.from(file.buffer as any) as Buffer);
+    await workbook.xlsx.load(buffer as any);
+    const worksheet = workbook.worksheets[0] as ExcelJS.Worksheet;
+    const headerRow = worksheet.getRow(1).values as Array<string | null>;
+    const headers = headerRow.slice(1).map((value) => (typeof value === "string" ? value.trim() : ""));
+
+    const worksheetRows = worksheet.getRows(2, worksheet.rowCount - 1) ?? [];
+    records = worksheetRows
+      .filter((row): row is ExcelJS.Row => Boolean(row))
+      .map((row) => {
+        const record: Record<string, string> = {};
+        headers.forEach((header, index) => {
+          const cell = row.getCell(index + 1);
+          if (cell !== null && cell !== undefined) {
+            record[header] = String(cell.text ?? cell.value ?? "").trim();
+          }
+        });
+        return record;
+      });
+  } else {
+    return res.status(400).json({ success: false, error: "Unsupported file type. Use CSV or XLSX." });
+  }
+
+  const result = await leadSvc.bulkCreateLeadsFromRows(records, req.user!.id, undefined, file.originalname);
   return ok(res, result);
 });

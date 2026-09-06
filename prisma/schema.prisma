@@ -17,25 +17,34 @@ enum UserRole {
 
 enum LeadStatus {
   NEW
-  ACTIVE
   CONTACTED
-  INTERESTED
   FOLLOW_UP
-  QUOTATION_SENT
+  QUALIFIED
+  PROPOSAL_SENT
   NEGOTIATION
   WON
   LOST
-  INACTIVE
   CLOSED
+  INACTIVE
 }
 
 enum LeadSource {
+  MANUAL
   INDIAMART
   WEBSITE
   FACEBOOK
+  INSTAGRAM
+  GOOGLE
   WHATSAPP
   REFERRAL
-  MANUAL
+  OTHER
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
 }
 
 enum FollowupStatus {
@@ -45,6 +54,24 @@ enum FollowupStatus {
   INTERESTED
   CALLBACK
   CLOSED
+}
+
+enum FollowupType {
+  PHONE_CALL
+  WHATSAPP
+  EMAIL
+  MEETING
+  SITE_VISIT
+}
+
+enum FollowupOutcome {
+  INTERESTED
+  NOT_INTERESTED
+  BUSY
+  CALL_LATER
+  NO_ANSWER
+  QUOTATION_SENT
+  DEMO_SCHEDULED
 }
 
 enum TaskStatus {
@@ -77,6 +104,16 @@ enum QuotationStatus {
   EXPIRED
 }
 
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
 enum NotificationChannel {
   EMAIL
   WHATSAPP
@@ -104,11 +141,14 @@ model User {
   tasksAssigned    Task[]            @relation("TaskAssignedTo")
   tasksCreated     Task[]            @relation("TaskCreatedBy")
   dealsAssigned    Deal[]            @relation("DealAssignedTo")
+  invoicesCreated  Invoice[]         @relation("InvoiceCreatedBy")
+  paymentsCreated  Payment[]         @relation("PaymentCreatedBy")
   activities       ActivityLog[]
   timelineEvents   LeadTimelineEvent[]
   refreshTokens    RefreshToken[]
   passwordResets   PasswordResetToken[]
   notifications    Notification[]
+  importHistories  ImportHistory[]
 
   @@index([email])
   @@index([role])
@@ -155,6 +195,7 @@ model Lead {
   address          String?    @db.Text
   leadSource       LeadSource
   leadStatus       LeadStatus @default(NEW)
+  priority         LeadPriority @default(MEDIUM)
   assignedToId     String?
   assignedTo       User?      @relation("LeadAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
   createdById      String
@@ -163,6 +204,7 @@ model Lead {
   notes            String?    @db.Text
   lastContactDate  DateTime?
   nextFollowupDate DateTime?
+  leadDate         DateTime?
   isActive         Boolean    @default(true)
   convertedAt      DateTime?
   createdAt        DateTime   @default(now())
@@ -173,6 +215,7 @@ model Lead {
   customers   Customer[]
   deals       Deal[]
   quotations  Quotation[]
+  invoices    Invoice[]
   timeline    LeadTimelineEvent[]
 
   @@index([leadStatus])
@@ -187,16 +230,18 @@ model Lead {
 }
 
 model Followup {
-  id               String         @id @default(uuid())
+  id               String           @id @default(uuid())
   leadId           String
-  lead             Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead             Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
   followupDate     DateTime
-  remarks          String?        @db.Text
+  followupType     FollowupType     @default(PHONE_CALL)
+  remarks          String?          @db.Text
   nextFollowupDate DateTime?
-  followupStatus   FollowupStatus @default(PENDING)
+  outcome          FollowupOutcome?
+  followupStatus   FollowupStatus   @default(PENDING)
   createdById      String
-  createdBy        User           @relation("FollowupCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  createdAt        DateTime       @default(now())
+  createdBy        User             @relation("FollowupCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt        DateTime         @default(now())
 
   @@index([leadId])
   @@index([followupDate])
@@ -216,6 +261,22 @@ model Note {
   @@index([leadId])
 }
 
+model ImportHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName     String?
+  totalRows    Int
+  importedRows Int
+  duplicateRows Int
+  failedRows   Int
+  errors       Json?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
 model Customer {
   id               String   @id @default(uuid())
   leadId           String?
@@ -232,6 +293,7 @@ model Customer {
 
   deals      Deal[]
   quotations Quotation[]
+  invoices   Invoice[]
 
   @@index([leadId])
   @@index([email])
@@ -254,6 +316,8 @@ model Deal {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  invoices Invoice[]
+
   @@index([customerId])
   @@index([leadId])
   @@index([stage])
@@ -267,8 +331,8 @@ model Quotation {
   leadId          String?
   lead            Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
   quotationNumber String          @unique
-  serviceName     String
-  amount          Decimal         @db.Decimal(14, 2)
+  serviceName     String?
+  amount          Decimal         @default(0) @db.Decimal(14, 2)
   tax             Decimal         @default(0) @db.Decimal(14, 2)
   discount        Decimal         @default(0) @db.Decimal(14, 2)
   totalAmount     Decimal         @db.Decimal(14, 2)
@@ -277,9 +341,90 @@ model Quotation {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
+  lineItems QuotationLineItem[]
+  invoices  Invoice[]
+
   @@index([leadId])
   @@index([customerId])
   @@index([status])
+}
+
+model ProductService {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  price       Decimal  @db.Decimal(14, 2)
+  taxPercent  Decimal  @default(0) @db.Decimal(5, 2)
+  unit        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quotationItems QuotationLineItem[]
+}
+
+model QuotationLineItem {
+  id          String   @id @default(uuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     ProductService? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(14, 2)
+  discount    Decimal  @default(0) @db.Decimal(14, 2)
+  taxPercent  Decimal  @default(0) @db.Decimal(5, 2)
+  total       Decimal  @db.Decimal(14, 2)
+
+  @@index([quotationId])
+  @@index([productId])
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  leadId        String?
+  lead          Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId        String?
+  deal          Deal?         @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  quotationId   String?
+  quotation     Quotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  amount        Decimal       @db.Decimal(14, 2)
+  tax           Decimal       @default(0) @db.Decimal(14, 2)
+  discount      Decimal       @default(0) @db.Decimal(14, 2)
+  totalAmount   Decimal       @db.Decimal(14, 2)
+  status        InvoiceStatus @default(DRAFT)
+  dueDate       DateTime?
+  paidAt        DateTime?
+  notes         String?       @db.Text
+  createdById   String
+  createdBy     User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  payments Payment[]
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([status])
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount        Decimal  @db.Decimal(14, 2)
+  paymentDate   DateTime @default(now())
+  paymentMethod String?
+  transactionId String?
+  notes         String?  @db.Text
+  createdById   String
+  createdBy     User     @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime @default(now())
+
+  @@index([invoiceId])
 }
 
 model Task {

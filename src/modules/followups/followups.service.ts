@@ -1,4 +1,4 @@
-import { FollowupStatus } from "@prisma/client";
+import { FollowupOutcome, FollowupStatus, FollowupType, LeadStatus } from "@prisma/client";
 import { prisma } from "../../config/db";
 import { AppError } from "../../utils/AppError";
 import { addLeadTimeline } from "../../services/timeline.service";
@@ -13,6 +13,8 @@ export async function addFollowup(input: {
   remarks?: string;
   nextFollowupDate?: Date;
   followupStatus?: FollowupStatus;
+  followupType?: FollowupType;
+  outcome?: FollowupOutcome;
   createdById: string;
 }) {
   const lead = await prisma.lead.findUnique({ where: { id: input.leadId } });
@@ -23,18 +25,34 @@ export async function addFollowup(input: {
     data: {
       leadId: input.leadId,
       followupDate: input.followupDate,
+      followupType: input.followupType ?? FollowupType.PHONE_CALL,
       remarks: input.remarks,
       nextFollowupDate: input.nextFollowupDate,
+      outcome: input.outcome,
       followupStatus: input.followupStatus ?? FollowupStatus.PENDING,
       createdById: input.createdById,
     },
   });
+  const leadUpdate: Record<string, unknown> = {
+    lastContactDate: new Date(),
+    ...(input.nextFollowupDate ? { nextFollowupDate: input.nextFollowupDate } : {}),
+  };
+  if (input.followupStatus) {
+    if (input.followupStatus === FollowupStatus.INTERESTED) {
+      leadUpdate.leadStatus = LeadStatus.FOLLOW_UP;
+    } else if (input.followupStatus === FollowupStatus.COMPLETED) {
+      leadUpdate.leadStatus = LeadStatus.FOLLOW_UP;
+    } else if (input.followupStatus === FollowupStatus.CALLBACK) {
+      leadUpdate.leadStatus = LeadStatus.FOLLOW_UP;
+    } else if (input.followupStatus === FollowupStatus.CLOSED) {
+      leadUpdate.leadStatus = LeadStatus.CLOSED;
+    } else if (input.followupStatus === FollowupStatus.NO_RESPONSE) {
+      leadUpdate.leadStatus = LeadStatus.CONTACTED;
+    }
+  }
   await prisma.lead.update({
     where: { id: input.leadId },
-    data: {
-      lastContactDate: new Date(),
-      ...(input.nextFollowupDate ? { nextFollowupDate: input.nextFollowupDate } : {}),
-    },
+    data: leadUpdate,
   });
   await addLeadTimeline({
     leadId: input.leadId,
@@ -69,6 +87,8 @@ export async function updateFollowup(
     remarks: string;
     nextFollowupDate: Date | null;
     followupStatus: FollowupStatus;
+    followupType: FollowupType;
+    outcome: FollowupOutcome;
   }>,
   userId: string,
 ) {
@@ -80,8 +100,10 @@ export async function updateFollowup(
     where: { id },
     data: {
       followupDate: data.followupDate,
+      followupType: data.followupType,
       remarks: data.remarks,
       nextFollowupDate: data.nextFollowupDate,
+      outcome: data.outcome,
       followupStatus: data.followupStatus,
     },
   });
@@ -149,5 +171,15 @@ export async function upcomingFollowups(withinDays: number, userId?: string) {
       lead: userId ? { assignedToId: userId } : undefined,
     },
     include: { lead: true },
+  });
+}
+
+export async function listAllFollowups(userId?: string) {
+  return prisma.followup.findMany({
+    where: {
+      lead: userId ? { assignedToId: userId } : undefined,
+    },
+    orderBy: { followupDate: "asc" },
+    include: { lead: true, createdBy: { select: { id: true, name: true } } },
   });
 }

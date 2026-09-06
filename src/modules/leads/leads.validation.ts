@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LeadSource, LeadStatus } from "@prisma/client";
+import { LeadPriority, LeadSource, LeadStatus } from "@prisma/client";
 import { paginationQuerySchema } from "../../utils/pagination";
 
 export const createLeadSchema = z.object({
@@ -16,10 +16,12 @@ export const createLeadSchema = z.object({
   address: z.string().optional(),
   leadSource: z.nativeEnum(LeadSource),
   leadStatus: z.nativeEnum(LeadStatus).optional(),
+  priority: z.nativeEnum(LeadPriority).optional(),
   assignedToId: z.string().uuid().optional(),
   tags: z.array(z.string()).optional(),
   notes: z.string().optional(),
   nextFollowupDate: z.coerce.date().optional(),
+  leadDate: z.coerce.date().optional(),
 });
 
 export const updateLeadSchema = createLeadSchema.partial();

@@ -1,4 +1,4 @@
-import { LeadSource, LeadStatus, Prisma } from "@prisma/client";
+import { LeadPriority, LeadSource, LeadStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../config/db";
 import { AppError } from "../../utils/AppError";
 import { logActivity } from "../../services/activity.service";
@@ -28,19 +28,39 @@ export async function createLead(
     address?: string;
     leadSource: LeadSource;
     leadStatus?: LeadStatus;
+    priority?: LeadPriority;
     assignedToId?: string;
     tags?: string[];
     notes?: string;
     nextFollowupDate?: Date;
+    leadDate?: Date;
   },
   createdById: string,
 ) {
+  const duplicate = await prisma.lead.findFirst({
+    where: {
+      OR: [
+        data.phone ? { phone: data.phone } : undefined,
+        data.email ? { email: data.email.toLowerCase() } : undefined,
+      ].filter(Boolean) as any[],
+    },
+  });
+  if (duplicate) {
+    throw new AppError("Duplicate lead found", 409, {
+      existingLeadName: duplicate.name,
+      mobileNumber: duplicate.phone,
+      email: duplicate.email,
+      currentStatus: duplicate.leadStatus,
+      leadId: duplicate.id,
+    });
+  }
+
   const lead = await prisma.lead.create({
     data: {
       name: data.name,
       phone: data.phone,
       alternatePhone: data.alternatePhone,
-      email: data.email || undefined,
+      email: data.email?.toLowerCase() || undefined,
       companyName: data.companyName,
       serviceRequired: data.serviceRequired,
       budget: decimal(data.budget),
@@ -50,11 +70,13 @@ export async function createLead(
       address: data.address,
       leadSource: data.leadSource,
       leadStatus: data.leadStatus ?? LeadStatus.NEW,
+      priority: data.priority ?? LeadPriority.MEDIUM,
       assignedToId: data.assignedToId,
       createdById,
       tags: data.tags ?? [],
       notes: data.notes,
       nextFollowupDate: data.nextFollowupDate,
+      leadDate: data.leadDate,
     },
     include: { assignedTo: { select: { id: true, name: true, email: true } } },
   });
@@ -123,11 +145,13 @@ export async function updateLead(
     address: string;
     leadSource: LeadSource;
     leadStatus: LeadStatus;
+    priority: LeadPriority;
     assignedToId: string | null;
     tags: string[];
     notes: string;
     lastContactDate: Date;
     nextFollowupDate: Date | null;
+    leadDate: Date | null;
     isActive: boolean;
   }>,
   userId: string,
@@ -142,7 +166,7 @@ export async function updateLead(
       name: data.name,
       phone: data.phone,
       alternatePhone: data.alternatePhone,
-      email: data.email,
+      email: data.email?.toLowerCase(),
       companyName: data.companyName,
       serviceRequired: data.serviceRequired,
       budget: data.budget !== undefined ? decimal(data.budget) : undefined,
@@ -152,11 +176,13 @@ export async function updateLead(
       address: data.address,
       leadSource: data.leadSource,
       leadStatus: data.leadStatus,
+      priority: data.priority,
       assignedToId: data.assignedToId === null ? null : data.assignedToId,
       tags: data.tags,
       notes: data.notes,
       lastContactDate: data.lastContactDate,
       nextFollowupDate: data.nextFollowupDate,
+      leadDate: data.leadDate,
       isActive: data.isActive,
     },
   });
@@ -365,32 +391,123 @@ export async function convertLeadToCustomer(leadId: string, userId: string) {
   return customer;
 }
 
+function normalizeRowValue(row: Record<string, string>, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (value && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function mapLeadSource(value?: string): LeadSource {
+  if (!value) return LeadSource.MANUAL;
+  const normalized = value.trim().toUpperCase();
+  if (normalized.includes("INDIA")) return LeadSource.INDIAMART;
+  if (normalized.includes("WEBSITE")) return LeadSource.WEBSITE;
+  if (normalized.includes("FACEBOOK")) return LeadSource.FACEBOOK;
+  if (normalized.includes("INSTAGRAM")) return LeadSource.INSTAGRAM;
+  if (normalized.includes("GOOGLE")) return LeadSource.GOOGLE;
+  if (normalized.includes("WHATSAPP")) return LeadSource.WHATSAPP;
+  if (normalized.includes("REFERRAL")) return LeadSource.REFERRAL;
+  return LeadSource.OTHER;
+}
+
+function mapPriority(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toUpperCase();
+  if (normalized.includes("URGENT")) return LeadPriority.URGENT;
+  if (normalized.includes("HIGH")) return LeadPriority.HIGH;
+  if (normalized.includes("LOW")) return LeadPriority.LOW;
+  return LeadPriority.MEDIUM;
+}
+
 export async function bulkCreateLeadsFromRows(
   rows: Record<string, string>[],
   createdById: string,
   defaultSource: LeadSource = LeadSource.MANUAL,
+  fileName?: string,
 ) {
-  let created = 0;
-  for (const row of rows) {
-    const name = row.name ?? row.Name;
+  const stats = {
+    totalRows: rows.length,
+    importedRows: 0,
+    duplicateRows: 0,
+    failedRows: 0,
+    errors: [] as string[],
+  };
+
+  for (const [index, row] of rows.entries()) {
+    const name = normalizeRowValue(row, ["name", "Name", "Lead Name", "lead_name"]);
     if (!name) {
+      stats.failedRows += 1;
+      stats.errors.push(`Row ${index + 1}: missing lead name`);
       continue;
     }
-    await createLead(
-      {
-        name,
-        phone: row.phone ?? row.Phone,
-        email: row.email ?? row.Email,
-        companyName: row.company ?? row.companyName ?? row.Company,
-        city: row.city ?? row.City,
-        state: row.state ?? row.State,
-        country: row.country ?? row.Country,
-        leadSource: (row.source as LeadSource) || defaultSource,
-        serviceRequired: row.service ?? row.serviceRequired,
-      },
-      createdById,
-    );
-    created += 1;
+
+    const phone = normalizeRowValue(row, ["phone", "Phone", "Mobile", "mobile"]);
+    const email = normalizeRowValue(row, ["email", "Email"]);
+    const companyName = normalizeRowValue(row, ["companyName", "CompanyName", "Company", "company"]);
+    const city = normalizeRowValue(row, ["city", "City"]);
+    const state = normalizeRowValue(row, ["state", "State"]);
+    const country = normalizeRowValue(row, ["country", "Country"]);
+    const address = normalizeRowValue(row, ["address", "Address"]);
+    const source = normalizeRowValue(row, ["source", "Lead Source", "leadSource"]);
+    const priority = normalizeRowValue(row, ["priority", "Priority"]);
+    const serviceRequired = normalizeRowValue(row, ["product", "Product", "serviceRequired", "Service"]);
+    const budgetValue = normalizeRowValue(row, ["budget", "Budget"]);
+    const notes = normalizeRowValue(row, ["remark", "remarks", "Remarks", "notes"]);
+
+    const budget = budgetValue ? Number(budgetValue.replace(/[^0-9.]/g, "")) : undefined;
+    if (budgetValue && Number.isNaN(budget)) {
+      stats.failedRows += 1;
+      stats.errors.push(`Row ${index + 1}: invalid budget value`);
+      continue;
+    }
+
+    try {
+      await createLead(
+        {
+          name,
+          phone,
+          email,
+          companyName,
+          city,
+          state,
+          country,
+          address,
+          leadSource: source ? mapLeadSource(source) : defaultSource,
+          serviceRequired,
+          budget,
+          notes,
+          priority: mapPriority(priority),
+        },
+        createdById,
+      );
+      stats.importedRows += 1;
+    } catch (error: unknown) {
+      if (error instanceof AppError && error.statusCode === 409) {
+        stats.duplicateRows += 1;
+      } else {
+        stats.failedRows += 1;
+        stats.errors.push(`Row ${index + 1}: ${error instanceof Error ? error.message : "unknown error"}`);
+      }
+    }
   }
-  return { created };
+
+  await prisma.importHistory.create({
+    data: {
+      userId: createdById,
+      fileName,
+      totalRows: stats.totalRows,
+      importedRows: stats.importedRows,
+      duplicateRows: stats.duplicateRows,
+      failedRows: stats.failedRows,
+      errors: stats.errors.length ? stats.errors : undefined,
+    },
+  });
+
+  return stats;
 }
