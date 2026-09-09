@@ -22,6 +22,7 @@ export const createLeadSchema = z.object({
   notes: z.string().optional(),
   nextFollowupDate: z.coerce.date().optional(),
   leadDate: z.coerce.date().optional(),
+  followupRemarks: z.string().optional(),
 });
 
 export const updateLeadSchema = createLeadSchema.partial();

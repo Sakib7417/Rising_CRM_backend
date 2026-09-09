@@ -1,4 +1,4 @@
-import { LeadPriority, LeadSource, LeadStatus, Prisma } from "@prisma/client";
+import { FollowupStatus, FollowupType, LeadPriority, LeadSource, LeadStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../config/db";
 import { AppError } from "../../utils/AppError";
 import { logActivity } from "../../services/activity.service";
@@ -34,6 +34,7 @@ export async function createLead(
     notes?: string;
     nextFollowupDate?: Date;
     leadDate?: Date;
+    followupRemarks?: string;
   },
   createdById: string,
 ) {
@@ -80,6 +81,20 @@ export async function createLead(
     },
     include: { assignedTo: { select: { id: true, name: true, email: true } } },
   });
+
+  if (data.nextFollowupDate) {
+    await prisma.followup.create({
+      data: {
+        leadId: lead.id,
+        followupDate: data.nextFollowupDate,
+        followupType: FollowupType.PHONE_CALL,
+        followupStatus: FollowupStatus.PENDING,
+        createdById,
+        remarks: data.followupRemarks || "Initial follow-up scheduled",
+      },
+    });
+  }
+
   await addLeadTimeline({
     leadId: lead.id,
     userId: createdById,
