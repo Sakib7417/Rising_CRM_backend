@@ -10,6 +10,7 @@ import { NotificationChannel } from "@prisma/client";
 export async function addFollowup(input: {
   leadId: string;
   followupDate: Date;
+  contactPerson?: string;
   remarks?: string;
   nextFollowupDate?: Date;
   followupStatus?: FollowupStatus;
@@ -26,6 +27,7 @@ export async function addFollowup(input: {
       leadId: input.leadId,
       followupDate: input.followupDate,
       followupType: input.followupType ?? FollowupType.PHONE_CALL,
+      contactPerson: input.contactPerson,
       remarks: input.remarks,
       nextFollowupDate: input.nextFollowupDate,
       outcome: input.outcome,
@@ -84,6 +86,7 @@ export async function updateFollowup(
   id: string,
   data: Partial<{
     followupDate: Date;
+    contactPerson: string;
     remarks: string;
     nextFollowupDate: Date | null;
     followupStatus: FollowupStatus;
@@ -101,6 +104,7 @@ export async function updateFollowup(
     data: {
       followupDate: data.followupDate,
       followupType: data.followupType,
+      contactPerson: data.contactPerson,
       remarks: data.remarks,
       nextFollowupDate: data.nextFollowupDate,
       outcome: data.outcome,

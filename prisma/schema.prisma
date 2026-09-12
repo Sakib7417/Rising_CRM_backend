@@ -235,6 +235,7 @@ model Followup {
   lead             Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
   followupDate     DateTime
   followupType     FollowupType     @default(PHONE_CALL)
+  contactPerson    String?
   remarks          String?          @db.Text
   nextFollowupDate DateTime?
   outcome          FollowupOutcome?

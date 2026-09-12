@@ -5,6 +5,7 @@ export const createFollowupSchema = z.object({
   leadId: z.string().uuid(),
   followupDate: z.coerce.date(),
   followupType: z.nativeEnum(FollowupType).optional(),
+  contactPerson: z.string().optional(),
   remarks: z.string().optional(),
   nextFollowupDate: z.coerce.date().optional(),
   outcome: z.nativeEnum(FollowupOutcome).optional(),
@@ -14,6 +15,7 @@ export const createFollowupSchema = z.object({
 export const updateFollowupSchema = z.object({
   followupDate: z.coerce.date().optional(),
   followupType: z.nativeEnum(FollowupType).optional(),
+  contactPerson: z.string().optional(),
   remarks: z.string().optional(),
   nextFollowupDate: z.coerce.date().nullable().optional(),
   outcome: z.nativeEnum(FollowupOutcome).optional(),
